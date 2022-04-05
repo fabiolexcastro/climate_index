@@ -14,9 +14,17 @@ calc_index <- function(mdl, tpe){
   
   cat(mdl, '\n')
   
-  # Historical
+  # mdl <- '../tbl/cm6/CMCC_ESM2'
+  # tpe <- 'ssp585'
+  
+  # Historical / Future
   hst <- glue('{mdl}/{tpe}') %>% dir_ls()
-  ids <- parse_number(basename(hst)) %>% sort()
+
+  if(any(hst == 'Hist')){
+    ids <- parse_number(basename(hst)) %>% sort()
+  } else {
+    ids <- str_split(basename(hst), '_') %>% sapply(., `[[`, 3) %>% gsub('.txt', '', .)
+  }
   
   # To join the historical datasets
   hst.tbl <- purrr::map(hst, read.table, sep = ';', header = T) %>% 
@@ -39,9 +47,10 @@ calc_index <- function(mdl, tpe){
   ids <- unique(hst.tbl$ID)
   
   # To calculate the SPEI 
-  hst.tbl <- map(.x = 1:length(ids), .f = function(i){
+  hst.tb2 <- map(.x = 1:length(ids), .f = function(i){
     cat(i, '\n')
     df <- filter(hst.tbl, ID == ids[i])
+    df <- drop_na(df) # Added
     
     spei <- list()
     spi  <- list()
@@ -66,7 +75,7 @@ calc_index <- function(mdl, tpe){
     mutate(model = basename(mdl))
   
   cat('Done!\n')
-  return(hst.tbl) 
+  return(hst.tb2) 
   
 }
 
@@ -102,83 +111,15 @@ srtm <- terra::mosaic(x = srtm, y = srt3)
 crds <- mutate(crds, dem = terra::extract(srtm, crds[,c(1, 2)])[,2])
 
 # To calculate the index --------------------------------------------------
+
+# Historical
 hist <- map2(.x = mdls, .y = rep('Hist', length(mdls)), .f = calc_index)
 hist <- bind_rows(hist)
 hist <- dplyr::select(hist, model, everything())
 dir.create('../rds/clima', recursive = T)
 saveRDS(object = hist, file = '../rds/clima/historical_models.rds')
 
-
+# Future
 ftre <- map2(.x = mdls, .y = rep('ssp585', length(mdls)), .f = calc_index)
 ftre <- bind_rows(ftre)
-
-
-calc_index <- function(mdl, tpe){
-  
-  mdl <- mdls[6]
-  tpe <- 'ssp585'
-  
-  # Historical
-  hst <- glue('{mdl}/{tpe}') %>% dir_ls()
-  ids <- parse_number(basename(hst)) %>% sort()
-  
-  # To join the historical datasets
-  hst.tbl <- purrr::map(hst, read.table, sep = ';', header = T) %>% 
-    purrr::map(., as_tibble) %>% 
-    bind_rows() %>% 
-    mutate(month = str_sub(Date, 6, 7)) %>% 
-    left_join(., crds[,c('ID', 'dem')], by = 'ID') %>% 
-    drop_na()
-  
-  for(i in 1:nrow(hst.tbl)){
-    cat(i, '\n')
-    hst.tbl[i,] %>% 
-      mutate(et0 = ETo(lat = Lat, z = dem, TN = Tmin, TX = Tmax, Rs = rsds, method_ETo = 'HS', doy = Doy))
-  }
-  
-  
-  rsl <- hst.tbl %>% 
-    mutate(et0 = ETo(lat = Lat, z = dem, TN = Tmin, TX = Tmax, Rs = rsds, method_ETo = 'HS', doy = Doy)) %>% 
-    group_by(ID, Long, Lat, Year, month) %>% 
-    dplyr::summarise(Prec = sum(Prec), 
-                     Tmin = mean(Tmin), 
-                     Tmax = mean(Tmax), 
-                     rsds = mean(rsds), 
-                     et0 = sum(et0)) %>% 
-    ungroup() %>% 
-    left_join(., crds[,c('ID', 'dem')], by = 'ID') %>% 
-    mutate(balance = Prec - et0)
-  
-  ids <- unique(hst.tbl$ID)
-  
-  # To calculate the SPEI 
-  hst.tbl <- map(.x = 1:length(ids), .f = function(i){
-    cat(i, '\n')
-    df <- filter(hst.tbl, ID == ids[i])
-    
-    spei <- list()
-    spi  <- list()
-    
-    for(i in c(1, 3, 6)){
-      spei[[i]] <- as.numeric(SPEI::spei(data = df$balance, scale = i)$fitted)
-      spi[[i]] <- as.numeric(SPEI::spi(data = df$Prec, scale = i)$fitted)
-    }
-    
-    spei <- spei[!sapply(spei, is.null)]
-    spi <- spi[!sapply(spi, is.null)]
-    df <- mutate(df, 
-                 spei_01 = spei[[1]], 
-                 spei_03 = spei[[2]], 
-                 spei_06 = spei[[3]],
-                 spi_01 = spi[[1]], 
-                 spi_03 = spi[[2]], 
-                 spi_06 = spei[[3]]) 
-    return(df)
-  }) %>% 
-    bind_rows() %>% 
-    mutate(model = basename(mdl))
-  
-  cat('Done!\n')
-  return(hst.tbl) 
-  
-}
+saveRDS(object = ftre, file = '../rds/clima/future_models.rds')
