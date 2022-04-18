@@ -1,5 +1,4 @@
 
-
 # Load libraries ----------------------------------------------------------
 require(pacman)
 pacman::p_load(raster, rgdal, hrbrthemes, extrafont, showtext, geodata, lubridate, zoo, SPEI, terra, rgeos, rnaturalearthdata, glue, stringr, sf, tidyverse, gtools, fs)
@@ -8,25 +7,11 @@ g <- gc(reset = T)
 rm(list = ls())
 options(scipen = 999)
 
-# Font --------------------------------------------------------------------
-font_add_google(family = 'Roboto', name = 'Roboto condensed')
-showtext_auto()
-
-# Load data ---------------------------------------------------------------
-root <- '../rds/clima'
-hist <- root %>% dir_ls(., regexp = 'hist') %>% readRDS()
-ftre <- root %>% dir_ls(., regexp = 'futu') %>% readRDS()
-
-# Get the name of each model 
-mdls <- unique(hist$model)
-i_hs <- unique(hist$ID)
-i_ft <- unique(ftre$ID)
-
 # Function ----------------------------------------------------------------
-make_graph <- function(id, mdl){
+make_graph <- function(ide, mdl){
   
-  ide <- i_hs[1]
-  mdl <- mdls[1]
+  # ide <- i_hs[2]
+  # mdl <- mdls[1]
   
   # Subsetting the datasets
   cat('Start', ide, mdl, sep = ' ', '\n')
@@ -61,9 +46,11 @@ make_graph <- function(id, mdl){
           plot.title = element_text(size = 48, face = 'bold', family = 'Roboto'),
           plot.subtitle = element_text(size = 48, face = 'bold', family = 'Roboto'), 
           strip.text = element_text(size = 40, face = 'bold', family = 'Roboto')) 
-    
-  ggsave(plot = g_spei, filename = glue('../png/graphs/SPEI {mdl} {ide}.png'), units = 'in', width = 7, height = 13, dpi = 300)
-
+  
+  out <- glue('../png/graphs/{ide}')
+  ifelse(!file.exists(out), dir_create(out), print('Already exists!'))
+  ggsave(plot = g_spei, filename = glue('{out}/SPEI {mdl} {ide}.png'), units = 'in', width = 7, height = 13, dpi = 300)
+  
   # SPI 
   spi <- dfm %>% filter(var %in% c('spi_01', 'spi_03', 'spi_06'))
   lbl <- tibble(var = unique(spi$var), variable = c('SPI 1', 'SPI 3', 'SPI 6'))
@@ -86,12 +73,32 @@ make_graph <- function(id, mdl){
           plot.subtitle = element_text(size = 48, face = 'bold', family = 'Roboto'), 
           strip.text = element_text(size = 40, face = 'bold', family = 'Roboto')) 
   
-  ggsave(plot = g_spi, filename = glue('../png/graphs/SPI {mdl} {ide}.png'), units = 'in', width = 7, height = 13, dpi = 300)
-  
-  
-  
+  ggsave(plot = g_spi, filename = glue('{out}/SPI {mdl} {ide}.png'), units = 'in', width = 7, height = 13, dpi = 300)
+  cat('Done!\n')
   
 }
 
 
+# Font --------------------------------------------------------------------
+font_add_google(family = 'Roboto', name = 'Roboto condensed')
+showtext_auto()
+
+# Load data ---------------------------------------------------------------
+root <- '../rds/clima'
+hist <- root %>% dir_ls(., regexp = 'hist') %>% readRDS()
+ftre <- root %>% dir_ls(., regexp = 'futu') %>% readRDS()
+
+# Get the name of each model 
+mdls <- unique(hist$model)
+i_hs <- unique(hist$ID)
+i_ft <- unique(ftre$ID)
+
+# To make the map ---------------------------------------------------------
+
+# All IDs and all models
+purrr::map(.x = 1:length(mdls), .f = function(i){
+  purrr::map(.x = 1:length(i_hs), .f = function(j){
+    make_graph(mdl = mdls[i], ide = i_hs[j])  
+  })
+})
 
